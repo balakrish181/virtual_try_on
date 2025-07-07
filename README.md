@@ -166,14 +166,3 @@ flake8
 
 
 
-## Troubleshooting
-
-| Issue | Cause | Resolution |
-|-------|-------|------------|
-| `WARNING: Missing or invalid Fashn.ai API key` | `FASHN_API_KEY` not set or incorrect | Define key in `.env` or environment | 
-| 503 from `/api/try-on` | Network/time-out to Fashn.ai | Check internet, confirm API reachability | 
-| Images not displayed | Frontend polling stops <br> or `status` never becomes `completed` | Inspect browser console & server logs, verify `prediction_id` exists | 
-
-## License
-
-[Your License Here]
