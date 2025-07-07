@@ -20,8 +20,7 @@ A fullscreen touchscreen application for retail stores that allows customers to 
 
 1. Clone this repository:
    ```
-   git clone <repository-url>
-   cd virtual-tryon
+   clone and cd into the repository
    ```
 
 2. Create and activate a virtual environment:
