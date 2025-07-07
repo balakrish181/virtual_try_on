@@ -1,6 +1,6 @@
 # Virtual Try-On Web App
 
-A fullscreen touchscreen application for retail stores that allows customers to virtually try on clothing items using AI-powered image generation technology.
+An application for retail stores that allows customers to virtually try on clothing items using AI-powered image generation technology.
 
 ## Features
 
