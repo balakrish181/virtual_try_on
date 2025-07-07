@@ -1,0 +1,9 @@
+This directory should contain clothing item images that will be used for the virtual try-on feature.
+
+Examples of images to include:
+- dress1.jpg: A leopard print dress similar to the one in the reference image
+- shirt1.jpg: A blue t-shirt 
+- dress2.jpg: A rust/orange dress
+- pants1.jpg: White pants
+
+These images will be sent to the Fashn.ai API along with the user's uploaded photo to generate the try-on result.

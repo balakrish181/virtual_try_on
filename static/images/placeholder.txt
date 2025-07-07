@@ -1,0 +1,5 @@
+This directory should contain the following placeholder images:
+- model1.jpg, model2.jpg, model3.jpg: Model preview images for the welcome screen
+- accessory1.jpg, accessory2.jpg, accessory3.jpg: Accessory images for the "Complete the Look" section
+
+You can replace these with actual fashion images of models wearing various outfits.

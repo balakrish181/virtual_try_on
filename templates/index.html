@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Try-On Experience</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* --- Base styles --- */
+        body{margin:0;padding:0;background-color:#111;color:white;font-family:'Arial',sans-serif;overflow-x:hidden;overflow-y:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+        .screen{width:100vw;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:1rem}
+        .fullscreen-container{display:flex;width:100%;min-height:100vh;flex-wrap:wrap}
+        /* --- Animations --- */
+        .fade-in{animation:fadeIn .5s ease-in}@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        .spinner{border:4px solid rgba(255,255,255,.3);border-radius:50%;border-top:4px solid white;width:40px;height:40px;animation:spin 1s linear infinite}@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+        @keyframes shake{0%,100%{transform:translateX(0)}10%,30%,50%,70%,90%{transform:translateX(-5px)}20%,40%,60%,80%{transform:translateX(5px)}}
+        .animate-shake{animation:shake .5s ease-in-out}
+        /* --- Scrollbars --- */
+        .custom-scrollbar::-webkit-scrollbar{width:8px;height:8px}.custom-scrollbar::-webkit-scrollbar-track{background:rgba(0,0,0,.1);border-radius:4px}.custom-scrollbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.3);border-radius:4px}.custom-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.5)}
+        /* --- Result Image --- */
+        #result-container{/* Container handles visibility */}#result-image{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
+        /* --- Visually Hidden --- */
+        .visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);border:0}
+        /* --- Gender Button Styling --- */
+        .gender-btn {
+            background-color: #374151; /* gray-700 */
+            border: 2px solid transparent;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        .gender-btn.selected {
+            background-color: #4f46e5; /* indigo-600 */
+            border-color: white;
+        }
+        .gender-btn:hover:not(.selected) {
+             background-color: #4b5563; /* gray-600 */
+        }
+    </style>
+</head>
+<body>
+    <!-- Embed clothing data from Flask into a script tag -->
+    <script id="clothing-data" type="application/json">
+        {{ clothing_data_json|safe }}
+    </script>
+
+    <main class="fullscreen-container">
+        <!-- SCREEN 1: Welcome Screen -->
+        <div id="welcome-screen" class="screen bg-black p-4 md:p-8 w-full">
+            <div class="max-w-sm sm:max-w-md md:max-w-xl lg:max-w-2xl w-full mx-auto text-center">
+                <h1 class="text-3xl sm:text-4xl md:text-5xl font-bold mb-8 md:mb-12">
+                    SEE YOURSELF<br>STYLED INSTANTLY
+                </h1>
+                <!-- Model Previews -->
+                <div class="grid grid-cols-3 gap-2 sm:gap-4 mb-8 md:mb-12">
+                    <div class="bg-gray-900 rounded-lg overflow-hidden aspect-w-1 aspect-h-1"><img src="/static/images/model1.jpg" alt="Model 1" class="w-full h-full object-cover"></div>
+                    <div class="bg-gray-900 rounded-lg overflow-hidden aspect-w-1 aspect-h-1"><img src="/static/images/model2.jpg" alt="Model 2" class="w-full h-full object-cover"></div>
+                    <div class="bg-gray-900 rounded-lg overflow-hidden aspect-w-1 aspect-h-1"><img src="/static/images/model3.jpg" alt="Model 3" class="w-full h-full object-cover"></div>
+                </div>
+
+                <!-- Gender Selection -->
+                <div class="mb-8 md:mb-12">
+                    <h2 class="text-xl sm:text-2xl font-bold mb-4">SELECT STYLE</h2>
+                    <div class="flex justify-center gap-4 sm:gap-6">
+                        <button id="select-female-btn" data-gender="female" class="gender-btn text-white px-6 py-3 rounded-full font-bold uppercase text-sm sm:text-base w-32 sm:w-40">
+                            Female
+                        </button>
+                        <button id="select-male-btn" data-gender="male" class="gender-btn text-white px-6 py-3 rounded-full font-bold uppercase text-sm sm:text-base w-32 sm:w-40">
+                            Male
+                        </button>
+                    </div>
+                     <p id="gender-error" class="text-red-500 text-sm mt-2 h-5"></p> <!-- Placeholder for error message -->
+                </div>
+
+                <!-- Stand Here Button -->
+                <div class="mb-8">
+                    <h2 class="text-2xl sm:text-3xl font-bold mb-4">
+                        STAND HERE<br>TO TRY ON
+                    </h2>
+                    <button id="try-on-btn" class="inline-block p-2 rounded-full text-white hover:bg-gray-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 sm:h-16 sm:w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SCREEN 2: Try-On Screen -->
+        <div id="tryon-screen" class="screen bg-black p-4 md:p-6 w-full hidden">
+            <!-- Back Button & API Status -->
+            <div class="absolute top-2 left-2 z-20"><button id="back-btn" class="text-gray-400 hover:text-white flex items-center p-2 rounded md:p-0 md:bg-transparent"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg><span class="hidden sm:inline">Back to Home</span></button></div>
+            {% if api_key_status == "Missing" %}<div id="api-key-alert" class="absolute top-2 right-2 z-20 bg-red-600 text-white px-3 py-1 rounded-md text-xs sm:text-sm"><p>⚠️ API Key Missing</p></div>{% endif %}
+
+            <!-- Main Content -->
+            <div class="max-w-7xl w-full mx-auto flex flex-col h-full">
+                <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-center mb-4 md:mb-6">TRY ON</h1>
+                <div class="flex flex-col lg:flex-row items-stretch gap-4 md:gap-6 flex-grow min-h-0">
+                    <!-- Accessories -->
+                    <div class="w-full lg:w-48 flex-shrink-0 order-2 lg:order-1">
+                        <h2 class="text-lg sm:text-xl font-bold text-center mb-3">COMPLETE THE LOOK</h2>
+                        <div class="grid grid-cols-3 lg:grid-cols-1 gap-2 lg:gap-4">
+                             <div class="bg-gray-800 p-1 rounded-lg aspect-w-1 aspect-h-1"><img src="/static/images/accessory1.jpg" alt="Handbag" class="w-full h-full object-cover rounded"></div>
+                             <div class="bg-gray-800 p-1 rounded-lg aspect-w-1 aspect-h-1"><img src="/static/images/accessory2.jpg" alt="Shoes" class="w-full h-full object-cover rounded"></div>
+                             <div class="bg-gray-800 p-1 rounded-lg aspect-w-1 aspect-h-1"><img src="/static/images/accessory3.jpg" alt="Earrings" class="w-full h-full object-cover rounded"></div>
+                        </div>
+                    </div>
+                    <!-- Try-On Preview -->
+                    <div class="flex-grow bg-gray-900 rounded-lg relative overflow-hidden order-1 lg:order-2 min-h-[300px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px]">
+                        <div id="upload-prompt" class="absolute inset-0 flex flex-col items-center justify-center text-center p-4 z-0">
+                             <div class="flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 text-gray-500 mb-3"><svg xmlns="http://www.w3.org/2000/svg" class="h-full w-full" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                             <p class="text-base sm:text-lg text-gray-400 mb-4">Take or upload your photo</p>
+                             <label for="person-image-input" class="bg-white text-black px-5 py-2 sm:px-6 sm:py-3 rounded-full font-bold text-sm sm:text-base cursor-pointer hover:bg-gray-200 transition-colors">Upload Photo</label>
+                             <input id="person-image-input" type="file" accept="image/*" class="visually-hidden">
+                        </div>
+                        <div id="loading-indicator" class="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75 z-10 hidden">
+                            <div class="spinner"></div><p id="loading-status" class="text-white text-sm sm:text-base mt-3 text-center px-2">Processing...</p>
+                        </div>
+                         <!-- Centering container for the result image -->
+                        <div id="result-container" class="absolute inset-0 flex items-center justify-center hidden z-0">
+                             <img id="result-image" alt="Try-on result"> <!-- Styling via CSS -->
+                        </div>
+                    </div>
+                    <!-- Clothing Items (Dynamically Populated) -->
+                    <div class="w-full lg:w-48 flex-shrink-0 order-3 lg:order-3">
+                        <div class="h-[120px] lg:h-[600px] overflow-y-hidden lg:overflow-y-auto overflow-x-auto lg:overflow-x-hidden custom-scrollbar">
+                            <div id="clothing-thumbnails" class="flex flex-row lg:flex-col gap-3 lg:gap-4 p-1 lg:p-0">
+                                <!-- Thumbnails will be added here by JavaScript -->
+                                <p class="text-gray-500 text-center w-full text-sm hidden" id="no-clothing-msg">No items found for selected style.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-8 mt-6 md:mt-8 flex-shrink-0">
+                    <button class="bg-white text-black px-5 py-2 sm:px-6 sm:py-3 rounded-full font-bold uppercase text-sm sm:text-base w-full sm:w-auto">Scan QR Code</button>
+                    <button class="bg-gray-800 text-white px-5 py-2 sm:px-6 sm:py-3 rounded-full font-bold uppercase text-sm sm:text-base w-full sm:w-auto">Ask Staff</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- DOM Elements ---
+            const welcomeScreen = document.getElementById('welcome-screen');
+            const tryonScreen = document.getElementById('tryon-screen');
+            const tryOnBtn = document.getElementById('try-on-btn');
+            const backBtn = document.getElementById('back-btn');
+            const personImageInput = document.getElementById('person-image-input');
+            const uploadPrompt = document.getElementById('upload-prompt');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const loadingStatus = document.getElementById('loading-status');
+            const resultContainer = document.getElementById('result-container');
+            const resultImage = document.getElementById('result-image');
+            const clothingThumbnailsContainer = document.getElementById('clothing-thumbnails');
+            const noClothingMsg = document.getElementById('no-clothing-msg');
+            const apiKeyAlert = document.getElementById('api-key-alert');
+            const maleBtn = document.getElementById('select-male-btn');
+            const femaleBtn = document.getElementById('select-female-btn');
+            const genderError = document.getElementById('gender-error');
+
+            // --- State ---
+            let personImageFile = null;
+            let currentPollInterval = null;
+            let selectedGender = null;
+            let allClothingItems = {}; // Will hold { male: [...], female: [...] }
+
+            // --- Load Initial Data ---
+            try {
+                 const clothingDataElement = document.getElementById('clothing-data');
+                 if (clothingDataElement) {
+                     allClothingItems = JSON.parse(clothingDataElement.textContent);
+                     console.log("Loaded clothing data:", allClothingItems);
+                 } else {
+                     console.error("Clothing data script tag not found!");
+                 }
+            } catch (e) {
+                 console.error("Failed to parse clothing data:", e);
+                 // Provide fallback or display error
+                 allClothingItems = { male: [], female: [] }; // Fallback
+            }
+
+
+            // --- Functions ---
+
+            function showScreen(screenToShow) { /* ... (same as before) ... */
+                welcomeScreen.classList.add('hidden');
+                tryonScreen.classList.add('hidden');
+                if (screenToShow) {
+                    screenToShow.classList.remove('hidden');
+                    screenToShow.classList.add('fade-in');
+                }
+            }
+
+            function resetTryOnState() { /* ... (same as before, adding gender reset) ... */
+                personImageFile = null;
+                uploadPrompt.classList.remove('hidden');
+                resultContainer.classList.add('hidden'); // Hide result container
+                resultImage.removeAttribute('src');
+                loadingIndicator.classList.add('hidden');
+                personImageInput.value = '';
+                // Deselect all clothing items (if any were selected)
+                document.querySelectorAll('.clothing-item').forEach(i => {
+                     i.classList.remove('border-white', 'border-opacity-100');
+                     i.classList.add('border-transparent');
+                });
+                // Clear thumbnails
+                clothingThumbnailsContainer.innerHTML = ''; // Clear dynamic content
+                noClothingMsg.classList.add('hidden');
+
+
+                if (currentPollInterval) {
+                    clearInterval(currentPollInterval);
+                    currentPollInterval = null;
+                }
+                // Reset scroll
+                if (clothingThumbnailsContainer.parentNode) {
+                     clothingThumbnailsContainer.parentNode.scrollTop = 0;
+                     clothingThumbnailsContainer.parentNode.scrollLeft = 0;
+                 }
+                 // Reset gender on back (optional, could keep it selected)
+                 // selectedGender = null;
+                 // maleBtn.classList.remove('selected');
+                 // femaleBtn.classList.remove('selected');
+                 // genderError.textContent = '';
+            }
+
+            function displayResult(imageUrl) { /* ... (same as before, ensures container is visible) ... */
+                 loadingIndicator.classList.add('hidden');
+                 resultImage.src = imageUrl;
+                 resultContainer.classList.remove('hidden'); // Show container
+                 uploadPrompt.classList.add('hidden');
+             }
+
+            function displayError(message) { /* ... (same as before, targets resultContainer visibility) ... */
+                console.error("Try-On Error:", message);
+                loadingIndicator.classList.remove('hidden');
+                loadingStatus.textContent = `Error: ${message}`;
+                setTimeout(() => {
+                    if (!currentPollInterval) {
+                        loadingIndicator.classList.add('hidden');
+                        if (!resultImage.src || resultContainer.classList.contains('hidden')) {
+                            uploadPrompt.classList.remove('hidden');
+                        }
+                    }
+                }, 6000);
+            }
+
+            function pollForResults(predictionId) { /* ... (same logic as before) ... */
+                const maxAttempts = 30, pollIntervalMs = 3000; let attempts = 0;
+                if (currentPollInterval) clearInterval(currentPollInterval);
+                loadingStatus.textContent = 'AI is preparing your preview...';
+                loadingIndicator.classList.remove('hidden');
+
+                currentPollInterval = setInterval(() => {
+                    attempts++; const progressText = `AI is working... (${attempts}/${maxAttempts})`;
+                    loadingStatus.textContent = progressText;
+                    if (attempts >= maxAttempts) { /* ... (handle timeout) ... */
+                         clearInterval(currentPollInterval); currentPollInterval = null; loadingIndicator.classList.add('hidden');
+                         displayError('Try-on taking too long.');
+                         document.querySelectorAll('.clothing-item.selected').forEach(i => i.classList.remove('selected', 'border-white'));
+                         return;
+                    }
+                    fetch(`/api/check-status/${predictionId}`).then(/* ... process response ... */
+                        response => {
+                             if (!response.ok) { /* ... handle fetch error ... */ return null; }
+                             const contentType = response.headers.get("content-type");
+                             if (contentType && contentType.includes("application/json")) return response.json();
+                             throw new Error("Invalid status response format.");
+                        }
+                    ).then(data => {
+                         if (!data) return;
+                         console.log('Status:', data);
+                         if (data.status === 'completed' || data.status === 'succeeded') { /* ... display result ... */
+                             clearInterval(currentPollInterval); currentPollInterval = null;
+                             const urls = data.image_urls || data.output;
+                             if (urls && urls.length > 0) displayResult(urls[0]); else throw new Error('No image URL found.');
+                         } else if (data.status === 'failed' || data.status === 'error') { /* ... handle failure ... */
+                             clearInterval(currentPollInterval); currentPollInterval = null;
+                             throw new Error(data.error || data.message || 'Try-on failed.');
+                         } else { /* ... still processing ... */ loadingStatus.textContent = `${progressText} (${data.status})`; }
+                    }).catch(error => { /* ... handle errors, stop polling if fatal ... */
+                         console.error('Polling Error:', error);
+                         if(currentPollInterval){ clearInterval(currentPollInterval); currentPollInterval = null; displayError(error.message); document.querySelectorAll('.clothing-item.selected').forEach(i => i.classList.remove('selected', 'border-white')); }
+                    });
+                }, pollIntervalMs);
+            }
+
+            function populateClothingThumbnails(gender) {
+                 clothingThumbnailsContainer.innerHTML = ''; // Clear previous items
+                 noClothingMsg.classList.add('hidden'); // Hide message initially
+                 const items = allClothingItems[gender] || [];
+
+                 if (items.length === 0) {
+                     noClothingMsg.classList.remove('hidden');
+                     return;
+                 }
+
+                 items.forEach(itemPath => {
+                     // itemPath is like "male/item.jpg" or "female/item.jpg"
+                     const fullImagePath = `/static/clothing/${itemPath}`;
+                     const garmentId = itemPath; // Use the path as the ID
+
+                     const div = document.createElement('div');
+                     div.className = 'clothing-item cursor-pointer rounded-lg overflow-hidden border-2 border-transparent hover:border-white transition-all flex-shrink-0 w-24 lg:w-full h-auto';
+                     div.setAttribute('data-garment-id', garmentId);
+
+                     const img = document.createElement('img');
+                     img.src = fullImagePath;
+                     img.alt = 'Clothing item';
+                     img.className = 'w-full h-auto object-cover aspect-w-3 aspect-h-4'; // Tailwind aspect ratio might need plugin or direct CSS
+                     img.style.aspectRatio = '3 / 4'; // Direct CSS aspect ratio
+
+                     div.appendChild(img);
+                     clothingThumbnailsContainer.appendChild(div);
+
+                     // Add click listener directly here
+                     div.addEventListener('click', handleClothingItemClick);
+                 });
+            }
+
+             // Handler for clicking a clothing item (used in populate and potentially event delegation)
+            function handleClothingItemClick() {
+                if (!personImageFile) {
+                    displayError('Please upload your photo first.');
+                    uploadPrompt.classList.add('animate-shake');
+                    setTimeout(() => uploadPrompt.classList.remove('animate-shake'), 500);
+                    return;
+                }
+                if (!loadingIndicator.classList.contains('hidden')) return; // Prevent clicks while loading
+
+                const garmentId = this.getAttribute('data-garment-id');
+                if (!garmentId) return console.error("Missing data-garment-id");
+
+                // Update selection visual state
+                document.querySelectorAll('.clothing-item').forEach(i => {
+                     i.classList.remove('border-white', 'border-opacity-100', 'selected');
+                     i.classList.add('border-transparent');
+                 });
+                this.classList.add('border-white', 'border-opacity-100', 'selected');
+                this.classList.remove('border-transparent');
+
+                loadingStatus.textContent = 'Preparing try-on...';
+                loadingIndicator.classList.remove('hidden');
+                if (currentPollInterval) clearInterval(currentPollInterval);
+
+                const formData = new FormData();
+                formData.append('person_image', personImageFile);
+                formData.append('garment_id', garmentId); // Send the path like "male/item.jpg"
+
+                fetch('/api/try-on', { method: 'POST', body: formData })
+                 .then(response => { /* ... (same fetch logic as before) ... */
+                    if (!response.ok) return response.text().then(text => { throw new Error(`API Error (${response.status}): ${text || 'Request failed.'}`) });
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.includes("application/json")) return response.json();
+                    throw new Error("Invalid response format from server.");
+                 })
+                 .then(data => { /* ... (same response handling as before) ... */
+                    if (data.error) throw new Error(data.error);
+                    const id = data.prediction_id || data.job_id || data.id;
+                    if (id) { pollForResults(id); }
+                    else { const urls = data.image_urls || data.output; if (urls && urls.length > 0) displayResult(urls[0]); else throw new Error('Missing ID or URL.'); }
+                 })
+                 .catch(error => { /* ... (same error handling as before) ... */
+                    console.error('Try-on initiation failed:', error); displayError(error.message);
+                    this.classList.remove('border-white', 'border-opacity-100', 'selected'); this.classList.add('border-transparent');
+                 });
+            }
+
+            // --- Event Listeners ---
+
+            // Gender Selection
+            maleBtn.addEventListener('click', () => {
+                selectedGender = 'male';
+                maleBtn.classList.add('selected');
+                femaleBtn.classList.remove('selected');
+                genderError.textContent = ''; // Clear error
+            });
+            femaleBtn.addEventListener('click', () => {
+                selectedGender = 'female';
+                femaleBtn.classList.add('selected');
+                maleBtn.classList.remove('selected');
+                genderError.textContent = ''; // Clear error
+            });
+
+            // Try On Button
+            tryOnBtn.addEventListener('click', () => {
+                 if (!selectedGender) {
+                     // alert('Please select a style (Male/Female) first.');
+                     genderError.textContent = 'Please select a style first.';
+                     // Optional: shake the gender buttons
+                     maleBtn.parentElement.classList.add('animate-shake');
+                     setTimeout(() => maleBtn.parentElement.classList.remove('animate-shake'), 500);
+                     return;
+                 }
+                 genderError.textContent = ''; // Clear error if selection is valid
+                 resetTryOnState(); // Reset parts of try-on screen state before showing
+                 populateClothingThumbnails(selectedGender);
+                 showScreen(tryonScreen);
+             });
+
+            // Back Button
+            backBtn.addEventListener('click', () => {
+                 resetTryOnState(); // Reset try-on fully
+                 // Reset gender selection state
+                 selectedGender = null;
+                 maleBtn.classList.remove('selected');
+                 femaleBtn.classList.remove('selected');
+                 genderError.textContent = '';
+                 showScreen(welcomeScreen);
+             });
+
+            // Image Upload
+            personImageInput.addEventListener('change', function(e) { /* ... (same as before) ... */
+                 if (e.target.files && e.target.files[0]) {
+                     const file = e.target.files[0];
+                     if (!file.type.startsWith('image/')) { displayError('Please select an image file.'); e.target.value = ''; return; }
+                     personImageFile = file;
+                     const reader = new FileReader();
+                     reader.onload = function(event) {
+                         resultImage.src = event.target.result;
+                         resultContainer.classList.remove('hidden'); // Show result container
+                         uploadPrompt.classList.add('hidden');
+                         document.querySelectorAll('.clothing-item.selected').forEach(i => i.classList.remove('selected', 'border-white')); // Clear selection
+                         loadingIndicator.classList.add('hidden');
+                     };
+                     reader.onerror = () => { displayError('Failed to read image.'); resetTryOnState(); };
+                     reader.readAsDataURL(file);
+                 } else { personImageFile = null; }
+             });
+
+            // Prevent Context Menu
+            document.addEventListener('contextmenu', e => e.preventDefault());
+
+            // --- Initial Setup ---
+            resetTryOnState(); // Ensure clean state on load
+            resultContainer.classList.add('hidden'); // Explicitly hide result container initially
+            showScreen(welcomeScreen);
+
+        });
+    </script>
+
+</body>
+</html>
